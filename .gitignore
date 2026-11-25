@@ -1,0 +1,13 @@
+# Harness working files: logs and reports are evidence for one run, not history.
+.testing/logs/
+.testing/ci-base-scope.txt
+target/
+
+# Keep the durable artifacts of a run:
+!.testing/assessment.md
+!.testing/plan.md
+!.testing/baseline.json
+!.testing/pit-scope.txt
+!.testing/final-report.md
+!.testing/SUSPECTED_ISSUES.md
+!.testing/blockers.md

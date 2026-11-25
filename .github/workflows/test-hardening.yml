@@ -1,0 +1,51 @@
+name: test-hardening guard
+
+# Authoritative enforcement for agent-written test changes. The agent cannot
+# edit this file's effect on a runner, cannot write the recomputed baseline,
+# and cannot push the approval tag.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history: the baseline is rebuilt from the base commit
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # A PR that changes the harness itself must not grade its own work.
+      - name: Refuse harness changes in a test-hardening PR
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD \
+               | grep -E '^(scripts/|\.github/workflows/|CLAUDE\.md)'; then
+            echo "This PR edits the guard, its scripts, or this workflow."
+            echo "Harness changes go in their own PR, reviewed on their own."
+            exit 1
+          fi
+
+      - name: Self-test the harness
+        run: bash scripts/tests/selftest.sh
+
+      - name: Guard (recomputes the baseline, reads the approval tag from origin)
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+          BUILD_CMD: mvn -q verify
+          MUTATION_CMD: mvn -q org.pitest:pitest-maven:mutationCoverage
+          REQUIRE_APPROVAL: '1'
+        run: bash scripts/ci-check.sh
+
+      - name: Publish evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-hardening-evidence
+          path: .testing/
