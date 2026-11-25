@@ -24,6 +24,13 @@ So enforcement now runs at two levels, and only one of them counts:
 
 Run the guard for feedback after every item. Believe CI.
 
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how it works, the two-level
+  enforcement model, what each check catches, and the trust boundaries.
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) — how to set it up on a service and run the
+  four phases, including what to do when a check fails.
+
 ## Contents
 
 | Path | Purpose |
