@@ -23,29 +23,54 @@ git checkout -b chore/test-ratchet-setup
 chmod +x scripts/*.sh scripts/*.py scripts/hooks/*.py scripts/tests/*.sh
 ```
 
-Add PIT **with XML output** to `pom.xml`. Without XML the guard cannot score, and
-it will fail rather than guess:
+Add PIT and JaCoCo to the service's `pom.xml`. Do not paste the XML by hand —
+the setup script does it in place and is safe to re-run:
 
-```xml
-<plugin>
-  <groupId>org.pitest</groupId>
-  <artifactId>pitest-maven</artifactId>
-  <version><!-- pin it --></version>
-  <configuration>
-    <outputFormats>
-      <outputFormat>HTML</outputFormat>
-      <outputFormat>XML</outputFormat>
-    </outputFormats>
-  </configuration>
-</plugin>
+```bash
+python scripts/setup_pom.py --check        # what is missing? exit 1 if incomplete
+python scripts/setup_pom.py --dry-run      # show the diff, write nothing
+python scripts/setup_pom.py                # patch in place (backup at pom.xml.bak)
 ```
 
-Add JaCoCo (`jacoco-maven-plugin`, `report` bound to `verify`) for branch coverage.
+What it does:
+
+- adds `pitest-maven` with `<outputFormat>XML</outputFormat>`. **XML is required** —
+  `scripts/pit_score.py` parses it, and the guard fails rather than guess without it.
+- sets `<timestampedReports>false</timestampedReports>`, so the report lands at a
+  stable path instead of a new timestamped directory per run.
+- adds `pitest-junit5-plugin` **only** if the project uses JUnit 5 (it looks for
+  `junit-jupiter`, `spring-boot-starter-test` or `junit-platform`). PIT needs it
+  on its own classpath for JUnit 5, and must not have it for JUnit 4.
+- adds `jacoco-maven-plugin` with `report` bound to `verify`. Pass `--no-jacoco`
+  to skip.
+
+What it will not do:
+
+- It never reserialises the file. Detection uses a real XML parser; writing is a
+  text insertion at a known offset, so comments, formatting and ordering survive.
+- If `pitest-maven` is already there, it adds the XML format and leaves the
+  version and any `targetClasses` alone.
+- It refuses an aggregator pom (one with `<modules>`), because PIT belongs on the
+  modules that hold the code. Run it per module, or pass `--force`.
+- It validates the result as XML before writing. If the patch would not parse,
+  nothing is written.
+
+Pin the versions deliberately:
+
+```bash
+python scripts/setup_pom.py \
+  --pitest-version 1.30.2 \
+  --junit5-plugin-version 1.2.3 \
+  --jacoco-version 0.8.12
+```
+
+Those are the defaults. **Check them against Maven Central before committing** —
+they were current when this was written, not necessarily when you run it.
 
 Verify the harness itself before trusting it:
 
 ```bash
-bash scripts/tests/selftest.sh      # expect: Passed: 39   Failed: 0
+bash scripts/tests/selftest.sh      # expect: Passed: 55   Failed: 0
 ```
 
 **Then make CI a required status check.** Settings → Branches → rule for `main` →
@@ -150,6 +175,7 @@ reads the tag from origin, refuses any harness edit, and re-runs everything.
 | `NOT_APPROVED` | no tag matches the current plan | the plan changed after approval; a person re-reads and re-tags |
 | `mutation score N below baseline` | the change weakened the suite | fix the tests. **Never adjust the baseline** — CI recomputes it and will catch the edit |
 | `baseline.json claims X but base scores Y` | the committed baseline was edited | restore it to the recomputed value |
+| `INCOMPLETE: ... pitest-maven` | the service's pom has no PIT, or PIT without XML | run `python scripts/setup_pom.py` |
 | `This PR edits the guard` | harness and test work are mixed | split them into two PRs |
 
 ## Scaling to many services

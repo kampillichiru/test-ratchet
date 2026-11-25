@@ -42,8 +42,11 @@ Read this before trusting any local result.
 
 1. Confirm the project builds: `mvn -v` and `mvn -q verify`. If Maven is missing,
    stop and say so. Never estimate a result.
-2. Confirm PIT emits XML (see README) — the guard refuses a report it cannot parse
-   or that predates the current commit.
+2. Confirm the pom is configured: `python scripts/setup_pom.py --check`. If it
+   reports INCOMPLETE, run `python scripts/setup_pom.py` and show the user the diff.
+   The guard refuses a PIT report it cannot parse or that predates the last `src/`
+   commit, so XML output is required. The pom change is setup, not hardening work:
+   commit it on its own.
 3. Run `bash scripts/tests/selftest.sh`. All cases must pass before you rely on the guard.
 4. Start Phase 1 by delegating to the `assessor` agent.
 

@@ -190,6 +190,101 @@ fresh_case "GAP-5b a docs-only commit does not make PIT look stale" 0 keep docs
 fresh_case "a src commit after the report is stale"                1 keep src
 fresh_case "a backdated report is stale even with no src change"   1 backdate docs
 
+# ------------------------------------------------------------ pom setup cases
+echo "== pom setup =="
+SETUP="$HARNESS/scripts/setup_pom.py"
+pom_dir=$(mktemp -d)
+write_pom() { cat > "$pom_dir/pom.xml"; }
+
+write_pom <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId><artifactId>svc</artifactId><version>1.0</version>
+  <dependencies>
+    <dependency><groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+  </dependencies>
+  <build><plugins>
+    <plugin><groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-maven-plugin</artifactId></plugin>
+  </plugins></build>
+</project>
+XML
+"$PY" "$SETUP" --check "$pom_dir/pom.xml" >/dev/null 2>&1
+check "a pom without PIT fails --check" 1 "$?"
+"$PY" "$SETUP" "$pom_dir/pom.xml" >/dev/null 2>&1
+check "patching a Spring Boot pom succeeds" 0 "$?"
+"$PY" "$SETUP" --check "$pom_dir/pom.xml" >/dev/null 2>&1
+check "the patched pom passes --check" 0 "$?"
+grep -q "pitest-junit5-plugin" "$pom_dir/pom.xml"
+check "JUnit 5 project gets the pitest-junit5-plugin" 0 "$?"
+grep -q "<outputFormat>XML</outputFormat>" "$pom_dir/pom.xml"
+check "XML output format is present" 0 "$?"
+"$PY" -c "import xml.etree.ElementTree as ET,sys;ET.parse(sys.argv[1])" "$pom_dir/pom.xml" >/dev/null 2>&1
+check "the patched pom is valid XML" 0 "$?"
+before=$(md5sum "$pom_dir/pom.xml" | cut -d" " -f1)
+"$PY" "$SETUP" "$pom_dir/pom.xml" >/dev/null 2>&1
+after=$(md5sum "$pom_dir/pom.xml" | cut -d" " -f1)
+check "re-running changes nothing (idempotent)" "$before" "$after"
+
+# JUnit 4 must NOT get the junit5 plugin
+write_pom <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId><artifactId>old</artifactId><version>1.0</version>
+  <dependencies><dependency><groupId>junit</groupId><artifactId>junit</artifactId>
+    <version>4.13.2</version><scope>test</scope></dependency></dependencies>
+</project>
+XML
+"$PY" "$SETUP" "$pom_dir/pom.xml" >/dev/null 2>&1
+grep -q "pitest-junit5-plugin" "$pom_dir/pom.xml"
+check "JUnit 4 project does not get the junit5 plugin" 1 "$?"
+grep -q "<build>" "$pom_dir/pom.xml"
+check "a pom with no <build> gets one" 0 "$?"
+
+# existing PIT without XML keeps its own config
+write_pom <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId><artifactId>svc</artifactId><version>1.0</version>
+  <build><plugins><plugin>
+    <groupId>org.pitest</groupId><artifactId>pitest-maven</artifactId><version>1.19.0</version>
+    <configuration><targetClasses><param>com.acme.*</param></targetClasses></configuration>
+  </plugin></plugins></build>
+</project>
+XML
+"$PY" "$SETUP" --no-jacoco "$pom_dir/pom.xml" >/dev/null 2>&1
+grep -q "com.acme.\*" "$pom_dir/pom.xml"
+check "existing pitest config is preserved" 0 "$?"
+grep -q "1.19.0" "$pom_dir/pom.xml"
+check "existing pitest version is not bumped" 0 "$?"
+grep -q "<outputFormat>XML</outputFormat>" "$pom_dir/pom.xml"
+check "XML is added to an existing pitest plugin" 0 "$?"
+
+# aggregator pom is refused
+write_pom <<'XML'
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.acme</groupId><artifactId>parent</artifactId><version>1.0</version>
+  <packaging>pom</packaging><modules><module>a</module></modules>
+</project>
+XML
+"$PY" "$SETUP" "$pom_dir/pom.xml" >/dev/null 2>&1
+check "an aggregator pom is refused without --force" 2 "$?"
+"$PY" "$SETUP" --force "$pom_dir/pom.xml" >/dev/null 2>&1
+check "--force patches an aggregator pom" 0 "$?"
+
+printf '<project><unclosed>\n' > "$pom_dir/pom.xml"
+"$PY" "$SETUP" "$pom_dir/pom.xml" >/dev/null 2>&1
+check "malformed XML is refused, not overwritten" 1 "$?"
+"$PY" "$SETUP" "$pom_dir/missing.xml" >/dev/null 2>&1
+check "a missing pom is a clear error" 2 "$?"
+rm -rf "$pom_dir"
+
 echo
 echo "Passed: $pass   Failed: $fail"
 echo "Not covered here: mvn verify, a real PIT run, and CI's baseline recomputation."

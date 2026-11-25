@@ -45,7 +45,8 @@ Run the guard for feedback after every item. Believe CI.
 | `scripts/pit_score.py` | Parses PIT XML properly; refuses a stale report or a mismatched class scope |
 | `scripts/test_census.py` | Ratchet: test and assertion counts must not fall |
 | `scripts/approval.py` | Approval as a git tag bound to a hash of the plan |
-| `scripts/tests/selftest.sh` | 35 cases, including one regression test per gap above |
+| `scripts/setup_pom.py` | Adds PIT (with XML) and JaCoCo to a service's `pom.xml`, idempotently |
+| `scripts/tests/selftest.sh` | 55 cases, including one regression test per gap above |
 | `.github/workflows/test-hardening.yml` | Wires `ci-check.sh` to pull requests |
 | `prompts/`, `templates/` | Phase prompts and the plan and report formats |
 
@@ -76,27 +77,24 @@ is a human signal. CI checks the remote; the local check says it is advisory.
 1. Copy these files into the root of the service repository.
 2. Requirements: JDK 17, Maven, Git, Python 3.8+. On Windows use Git Bash; the
    hook calls `python`, so make sure that resolves to Python 3.
-3. Add PIT **with XML output** — the guard refuses a report it cannot parse:
+3. Add PIT and JaCoCo to the service's `pom.xml` with the setup script — it is
+   idempotent, preserves formatting, and refuses to write anything that would not
+   parse:
 
-   ```xml
-   <plugin>
-     <groupId>org.pitest</groupId>
-     <artifactId>pitest-maven</artifactId>
-     <version><!-- pin it --></version>
-     <configuration>
-       <outputFormats>
-         <outputFormat>HTML</outputFormat>
-         <outputFormat>XML</outputFormat>
-       </outputFormats>
-     </configuration>
-   </plugin>
+   ```bash
+   python scripts/setup_pom.py --check     # what is missing?
+   python scripts/setup_pom.py --dry-run   # show the diff
+   python scripts/setup_pom.py             # patch in place
    ```
 
-4. Add JaCoCo (`jacoco-maven-plugin`, `report` bound to `verify`) for branch coverage.
-5. `bash scripts/tests/selftest.sh` — all 35 cases must pass.
-6. Enable the workflow and make the `guard` job a required status check on `main`.
+   XML output is required, not optional: `scripts/pit_score.py` parses it and the
+   guard fails rather than guess without it. See
+   [docs/RUNBOOK.md](docs/RUNBOOK.md) for the options and the version pins.
+
+4. `bash scripts/tests/selftest.sh` — all 55 cases must pass.
+5. Enable the workflow and make the `guard` job a required status check on `main`.
    Without that, CI is advice too.
-7. Work on a branch, never on `main`.
+6. Work on a branch, never on `main`.
 
 ### Not GitHub Actions
 
